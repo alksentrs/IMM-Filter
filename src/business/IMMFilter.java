@@ -22,10 +22,13 @@ public class IMMFilter implements IFilter{
     RealVector xpGate;
     RealMatrix SGate;
 
-    public IMMFilter(Vector<IFilter> filters, RealVector modelProbability, RealMatrix modelTransitionProbability) {
+    double time;
+
+    public IMMFilter(Vector<IFilter> filters, RealVector modelProbability, RealMatrix modelTransitionProbability, double time) {
         this.modelProbability = modelProbability;
         this.modelTransitionProbability = modelTransitionProbability;
         this.filters = filters;
+        this.time = time;
         mixingEstimates();
     }
 
@@ -45,11 +48,15 @@ public class IMMFilter implements IFilter{
     }
 
     @Override
-    public RealVector getPredicted() {
+    public RealVector getPrediction() {
         return xp;
     }
 
-    public RealVector predict(double dt) {
+    @Override
+    public RealVector predict(double time) {
+
+        double dt = time - this.time;
+
         mixingInitialConditions();
         if (filters.size() > 1) {
             double detS = Double.MAX_VALUE;
@@ -59,8 +66,7 @@ public class IMMFilter implements IFilter{
             while (it.hasNext()) {
                 IFilter filter = it.next();
                 filter.predict(dt);
-                filter.computeResidualCovariance();
-                RealVector xpf = filter.getPredicted();
+                RealVector xpf = filter.getPrediction();
                 RealMatrix Sf = filter.getResidualCovariance();
                 LUDecomposition luDecomposition = new LUDecomposition(Sf);
                 double detSf = luDecomposition.getDeterminant();
@@ -76,9 +82,8 @@ public class IMMFilter implements IFilter{
         } else {
             IFilter filter = filters.get(0);
             filter.predict(dt);
-            xpGate = filter.getPredicted();
-            xp = filter.getPredicted();
-            filter.computeResidualCovariance();
+            xpGate = filter.getPrediction();
+            xp = filter.getPrediction();
             SGate = filter.getResidualCovariance();
         }
         return xp;
@@ -110,13 +115,13 @@ public class IMMFilter implements IFilter{
                 RealMatrix Sa_0 = null;
                 for (int i = 0; i < filters.size(); i++) {
                     IFilter filter = filters.get(i);
-                    RealVector xaf = filter.getEstimated();
+                    RealVector xaf = filter.getEstimate();
                     RealVector multiplied = xaf.mapMultiply(muTrans.getEntry(i,j));
                     if (i == 0) xa_0 = multiplied; else xa_0 = xa_0.add(multiplied);
                 }
                 for (int i = 0; i < filters.size(); i++) {
                     IFilter filter = filters.get(i);
-                    RealVector xaf = filter.getEstimated();
+                    RealVector xaf = filter.getEstimate();
                     RealMatrix Saf = filter.getErrorCovariance();
                     RealVector subtracted = xaf.subtract(xa_0);
                     Saf.add(subtracted.outerProduct(subtracted).scalarMultiply(muTrans.getEntry(i, j)));
@@ -126,7 +131,7 @@ public class IMMFilter implements IFilter{
                 SafMixied.add(Sa_0);
             }
             for (int j = 0; j < filters.size(); j++) {
-                filters.get(j).setEstimated(xafMixied.get(j));
+                filters.get(j).setEstimate(xafMixied.get(j));
                 filters.get(j).setErrorCovariance(SafMixied.get(j));
             }
         }
@@ -155,12 +160,12 @@ public class IMMFilter implements IFilter{
     }
 
     @Override
-    public RealVector getEstimated() {
+    public RealVector getEstimate() {
         return xa;
     }
 
     @Override
-    public void setEstimated(RealVector xa) {
+    public void setEstimate(RealVector xa) {
         this.xa = xa;
     }
 
@@ -168,13 +173,13 @@ public class IMMFilter implements IFilter{
     public RealVector estimate(RealVector z) {
         for (int i = 0; i < filters.size(); i++) filters.get(i).estimate(z);
         updateProbabilities();
-        mixingPredictions();
         mixingEstimates();
+        mixingPredictions();
         return xa;
     }
 
     public RealVector estimateWithPrediction() {
-        for (int j = 0; j < filters.size(); j++) filters.get(j).setEstimated(xp);
+        for (int j = 0; j < filters.size(); j++) filters.get(j).setEstimate(xp);
         return xp;
     }
 
@@ -201,18 +206,13 @@ public class IMMFilter implements IFilter{
         }
     }
 
-    @Override
-    public void computeResidualCovariance() {
-        //S =
-    }
-
     public void mixingPredictions() {
         RealVector mu_p = modelTransitionProbability.preMultiply(modelProbability);
 
         if (filters.size()>1) {
             for (int i = 0; i < filters.size(); i++) {
                 IFilter filter = filters.get(i);
-                RealVector xpf = filter.getPredicted();
+                RealVector xpf = filter.getPrediction();
                 RealVector multiplied = xpf.mapMultiply(mu_p.getEntry(i));
                 if (i == 0) xp = multiplied; else xp = xp.add(multiplied);
             }
@@ -224,7 +224,7 @@ public class IMMFilter implements IFilter{
                 if (i == 0) S = added; else S = S.add(added);
             }
         } else {
-            xp = filters.get(0).getPredicted();
+            xp = filters.get(0).getPrediction();
             S = filters.get(0).getResidualCovariance();
         }
     }
@@ -234,20 +234,20 @@ public class IMMFilter implements IFilter{
         if (filters.size()>1) {
             for (int i = 0; i < filters.size(); i++) {
                 IFilter filter = filters.get(i);
-                RealVector xaf = filter.getEstimated();
+                RealVector xaf = filter.getEstimate();
                 RealVector multiplied = xaf.mapMultiply(modelProbability.getEntry(i));
                 if (i == 0) xa = multiplied; else xa = xa.add(multiplied);
             }
             for (int i = 0; i < filters.size(); i++) {
                 IFilter filter = filters.get(i);
-                RealVector xaf = filter.getEstimated();
+                RealVector xaf = filter.getEstimate();
                 RealMatrix Saf = filter.getErrorCovariance();
                 RealVector subtracted = xa.subtract(xaf);
                 RealMatrix added = (Saf.add(subtracted.outerProduct(subtracted))).scalarMultiply(modelProbability.getEntry(i));
                 if (i == 0) Sa = added; else Sa = Sa.add(added);
             }
         } else {
-            xa = filters.get(0).getEstimated();
+            xa = filters.get(0).getEstimate();
             Sa = filters.get(0).getErrorCovariance();
         }
     }

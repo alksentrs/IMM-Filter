@@ -11,19 +11,17 @@ public interface IFilter {
 
     void setErrorCovariance(RealMatrix Sa);
 
-    RealVector getEstimated();
+    RealVector getEstimate();
 
-    void setEstimated(RealVector xa);
+    void setEstimate(RealVector xa);
 
-    RealVector getPredicted();
+    RealVector getPrediction();
 
     RealVector getResidualMeasurement();
 
     double getLambda();
 
-    RealVector predict(double dt);
-
-    void computeResidualCovariance();
+    RealVector predict(double time);
 
     RealVector estimate(RealVector z);
 }
